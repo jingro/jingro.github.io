@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta http-equiv="content-type" content="text/html; charset=utf-8"><meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" name="viewport"><meta content="yes" name="apple-mobile-web-app-capable"><meta content="black-translucent" name="apple-mobile-web-app-status-bar-style"><meta content="telephone=no" name="format-detection"><meta name="description"><title>JVM垃圾回收 | Jing's</title><link rel="stylesheet" type="text/css" href="/css/style.css?v=0.0.0"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/normalize/7.0.0/normalize.min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/pure-min.css"><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/pure/1.0.0/grids-responsive-min.css"><link rel="stylesheet" href="//cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css"><script type="text/javascript" src="//cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script><link rel="Shortcut Icon" type="image/x-icon" href="/favicon.ico"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><link rel="apple-touch-icon-precomposed" href="/apple-touch-icon.png"></head><body><div class="body_container"><div id="header"><div class="site-name"><h1 class="hidden">JVM垃圾回收</h1><a id="logo" href="/.">Jing's</a><p class="description"></p></div><div id="nav-menu"><a href="/." class="current"><i class="fa fa-home"> 首页</i></a><a href="/archives/"><i class="fa fa-archive"> 归档</i></a><a href="/about/"><i class="fa fa-user"> 关于</i></a><a href="/atom.xml"><i class="fa fa-rss"> 订阅</i></a></div></div><div id="layout" class="pure-g"><div class="pure-u-1 pure-u-md-3-4"><div class="content_container"><div class="post"><h1 class="post-title">JVM垃圾回收</h1><div class="post-meta">Apr 2, 2018<script src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js" async></script><span id="busuanzi_container_page_pv"> | <span id="busuanzi_value_page_pv"></span><span> 阅读</span></span></div><div class="post-content"><h4 id="HotSpot的GC"><a href="#HotSpot的GC" class="headerlink" title="HotSpot的GC"></a>HotSpot的GC</h4><p>GC针对的是堆和非堆（方法区或永久代，永久代是HopSpot才有的说法），堆中存在的是一般的对象实例需要回收，方法区中会回收不再使用的Class对象，和常量池不再使用的常量（但HotSpot已经将字符串常量池移出了方法区）</p>
+<h4 id="判断一个对象是否需要回收"><a href="#判断一个对象是否需要回收" class="headerlink" title="判断一个对象是否需要回收"></a>判断一个对象是否需要回收</h4><p>一个对象是否需要回收可以使用两种常用方法：</p>
+<ol>
+<li>引用计数法</li>
+<li>可达性分析</li>
+</ol>
+<p>引用计数法比较容易理解，在一般的解释垃圾回收机制时常常会用到，即对象每被引用一次时，对应的计数就加1，每个引用超过存在范围无效时，对应计数就减1，当计数为0时，意味着GC可以回收这个对象了。</p>
+<p>但是引用计数法有一个主要的问题是可能存在循环引用，当两个孤立的对象（即不存在引用可被其它代码访问到）互相持有对方的引用时，两个对象的引用计数都不为0，但实际上已经没有代码可以访问到这两个对象加以使用了，是需要被回收的，但引用计数没法回收。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div><div class="line">19</div><div class="line">20</div><div class="line">21</div><div class="line">22</div><div class="line">23</div><div class="line">24</div></pre></td><td class="code"><pre><div class="line"><span class="class"><span class="keyword">class</span> <span class="title">A</span> </span>&#123;</div><div class="line">    <span class="keyword">private</span> B b;</div><div class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setB</span><span class="params">(B b)</span> </span>&#123;</div><div class="line">        <span class="keyword">this</span>.b = b;</div><div class="line">    &#125;</div><div class="line">&#125;</div><div class="line"></div><div class="line"><span class="class"><span class="keyword">class</span> <span class="title">B</span> </span>&#123;</div><div class="line">    <span class="keyword">private</span> A a;</div><div class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setA</span><span class="params">(A a)</span> </span>&#123;</div><div class="line">        <span class="keyword">this</span>.a = a;</div><div class="line">    &#125;</div><div class="line">&#125;</div><div class="line"></div><div class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">ReferenceCountingGC</span> </span>&#123;</div><div class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> </span>&#123;</div><div class="line">    A a = <span class="keyword">new</span> A();</div><div class="line">    B b = <span class="keyword">new</span> B();</div><div class="line">    a.setB(b);</div><div class="line">    b.setA(a);</div><div class="line">    a = <span class="keyword">null</span>;</div><div class="line">    b = <span class="keyword">null</span>;</div><div class="line">    System.gc();</div><div class="line">&#125;</div></pre></td></tr></table></figure>
+<p>可达性分析则是从称为”GC Roots”的对象作为起点，从这些结点开始往下搜索，即对图的搜索，对所有在搜索过程中访问到的结点做标记，完成遍历后，未标记的对象即需要回收。在Java中，GC Roots包括了：</p>
+<ul>
+<li>方法栈（包括Java方法栈和Native方法栈）的局部变量所引用的对象</li>
+<li>方法区中静态变量引用的对象（即方法中和类中的static变量）</li>
+<li>方法区中常量所引用的对象。(包括方法中或是类中声明的常量)<br>这种判断方法可以有效的避免循环引用问题，因为循环引用在遍历过程中无法被标记。</li>
+</ul>
+<h4 id="回收算法"><a href="#回收算法" class="headerlink" title="回收算法"></a>回收算法</h4><p>常用的回收算法包括3种：</p>
+<ol>
+<li>标记-清除（mark-sweep，ms）</li>
+<li>标记-整理（mark-compact，mc）</li>
+<li>复制（copying）</li>
+</ol>
+<p>标记-清除算法即使用之前提到的判断方法对需要回收的对象进行标记，标记完成后即进行回收，存在的问题是在清除后会产生大量的不连续内存碎片，导致之后无法在这些碎片上分配空间给较大的对象。进而导致又一次GC</p>
+<p>标记-整理算法类似于标记-清除算法，但在清理过程中会将存活的对象向一段移动，将存货对象边界之外的内存进行清理。这样可以避免产生碎片，但显然比标记-清除算法需要更多的时间。</p>
+<p>复制算法即将内存分为两块区域（两块区域大小可以相等也可不等，一般情况相等，如果回收大量对象，也可不等），先标记出存活的对象，然后整体复制到另一块内存上，再将前一块内存整个回收。</p>
+<h4 id="实际GC方式"><a href="#实际GC方式" class="headerlink" title="实际GC方式"></a>实际GC方式</h4><p>当前商业虚拟机的GC都采用分代收集方式，即将对象分为新生代和老年代。新生代经过一定次数回收（可以通过参数指定次数）后仍然存活即会转变为老年代。</p>
+<h5 id="新生代回收-Minor-GC"><a href="#新生代回收-Minor-GC" class="headerlink" title="新生代回收 (Minor GC)"></a>新生代回收 (Minor GC)</h5><p>针对大量新生代“朝生夕死”，仅有少量对象存活，采用复制算法进行回收。即针对新生代，把内存分为Eden、和两块Survivor空间，新创建的对象会放在Eden区，回收后的存活对象放入一块Survivor区，而下一次回收，Eden区和Survivor区的对象会转入另一块Survivor区。一般会将Eden区和Survivor区分配为8:1:1。即仅有10%的空间被浪费。出现大对象或者空间不够时会转入老年区内存（老年区内存一般比新生代内存大得多）。</p>
+<h5 id="老年代回收-Full-GC"><a href="#老年代回收-Full-GC" class="headerlink" title="老年代回收 (Full GC)"></a>老年代回收 (Full GC)</h5><p>老年代对象因为存活率高，也没有其它空间可以转入，所以使用标记-清理或标记-整理算法</p>
+<h4 id="垃圾回收器"><a href="#垃圾回收器" class="headerlink" title="垃圾回收器"></a>垃圾回收器</h4><p>常用的垃圾回收器包括有：</p>
+<ol>
+<li>Serial (单线程，针对新生代)</li>
+<li>Serial Old (单线程，针对老年代)</li>
+<li>ParNew（多线程，针对新生代）</li>
+<li>CMS (多线程，针对老年代)</li>
+<li>Parallel Scavenge (多线程，针对新生代)</li>
+<li>Parallel Old （多线程，针对老年代）</li>
+<li>G1（包括了所有对象回收，可独立管理内存）</li>
+</ol>
+<p>一般新生代收集器均采用复制算法，而老年代收集器除CMS(Concurrent Mark Sweep)采用标记-清除算法，其它均采用标记-整理算法</p>
+<ul>
+<li>Serial和Serial Old是最简单的单线程回收器，但显然效率不够</li>
+<li>ParNew是Serial的多线程版本</li>
+<li>Parallel Scavenge也是Serial的多线程版本，但将吞吐量做为目标，即可以控制GC时间在整个运行过程的比例，通过参数精确设定吞吐量和最大停顿时间。使用自适应调节策略以达到设定的目标。Parallel Old是搭配Parallel Scavenge使用的老年代收集器</li>
+<li>CMS则是将最短停顿时间作为目标，通过将整个回收过程分为4个阶段：<ol>
+<li>初始标记</li>
+<li>并发标记</li>
+<li>重新标记</li>
+<li>并发清除<br>其中，初始标记仅仅标记GC Roots直接关联的对象，并发标记在初始标记基础上进行深入标记。并发标记和并发清除耗时最长，但可以和用户线程同时运行，因而大量减少了停顿时间，重新标记则是为了修正并发标记过程新产生的垃圾对象</li>
+</ol>
+</li>
+<li>G1采用了类似于CMS的方式，进行并发标记和清除以减少停顿时间，并且也类似于Parallel Scavenge建立了可预测的停顿时间模型，将GC时间控制在一定时间内。G1把内存分为多个大小相等的区域，并不再物理上区分新生代和老年代，通过跟踪每个区域的垃圾堆积价值大小，在后台维护一个优先列表，根据允许的收集时间，优先回收价值最大的区域（Garbage First由来）。保证在有限时间内具有更高的回收效率。</li>
+</ul>
+</div><div class="tags"><a href="/tags/JVM/">JVM</a><a href="/tags/java/">java</a></div><div class="post-nav"><a href="/2018/04/01/CPU的Cache一致性/" class="next">CPU的Cache一致性</a></div><div id="container"></div><link rel="stylesheet" href="https://imsun.github.io/gitment/style/default.css"><script src="https://imsun.github.io/gitment/dist/gitment.browser.js"></script><script>var gitment = new Gitment({
+  id: 'decodeURI(window.location.pathname)',
+  owner: 'jingro',
+  repo: 'gitment-comments',
+  oauth: {
+    client_id: 'e0ef360e7d4c6207d232',
+    client_secret: '6d302f0661cedbccffca722cc31c0f132952cc81',
+  },
+})
+gitment.render('container')
+</script></div></div></div><div class="pure-u-1-4 hidden_mid_and_down"><div id="sidebar"><div class="widget"><form action="//www.google.com/search" method="get" accept-charset="utf-8" target="_blank" class="search-form"><input type="text" name="q" maxlength="20" placeholder="Search"/><input type="hidden" name="sitesearch" value="http://yoursite.com"/></form></div><div class="widget"><div class="widget-title"><i class="fa fa-folder-o"> 分类</i></div></div><div class="widget"><div class="widget-title"><i class="fa fa-star-o"> 标签</i></div><div class="tagcloud"><a href="/tags/JVM/" style="font-size: 15px;">JVM</a> <a href="/tags/java/" style="font-size: 15px;">java</a> <a href="/tags/算法/" style="font-size: 15px;">算法</a> <a href="/tags/并发/" style="font-size: 15px;">并发</a> <a href="/tags/python/" style="font-size: 15px;">python</a></div></div><div class="widget"><div class="widget-title"><i class="fa fa-file-o"> 最近文章</i></div><ul class="post-list"><li class="post-list-item"><a class="post-list-link" href="/2018/04/02/JVM垃圾回收/">JVM垃圾回收</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/04/01/CPU的Cache一致性/">CPU的Cache一致性</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/03/16/字符串查找/">字符串查找</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/02/25/macOS-编译openjdk8/">macOS 编译openjdk8</a></li><li class="post-list-item"><a class="post-list-link" href="/2018/02/07/AVL树-python实现/">AVL树-python实现</a></li></ul></div><div class="widget"><div class="widget-title"><i class="fa fa-external-link"> 友情链接</i></div><ul></ul><a href="https://stackoverflow.com/" title="stackoverflow" target="_blank">stackoverflow</a><ul></ul><a href="https://segmentfault.com/" title="segmentfault" target="_blank">segmentfault</a></div></div></div><div class="pure-u-1 pure-u-md-3-4"><div id="footer">Copyright © 2018 <a href="/." rel="nofollow">Jing's.</a> Powered by<a rel="nofollow" target="_blank" href="https://hexo.io"> Hexo.</a><a rel="nofollow" target="_blank" href="https://github.com/tufu9441/maupassant-hexo"> Theme</a> by<a rel="nofollow" target="_blank" href="https://github.com/pagecho"> Cho.</a>Total<script src="https://dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js" async="async"></script><span id="busuanzi_container_site_pv"><span> </span><span rel="nofollow" id="busuanzi_value_site_pv"></span><span rel="nofollow">  visits, </span></span><span id="busuanzi_container_site_uv"><span rel="nofollow" id="busuanzi_value_site_uv"></span><span rel="nofollow">  vistors.</span></span></div></div></div><a id="rocket" href="#top" class="show"></a><script type="text/javascript" src="/js/totop.js?v=0.0.0" async></script><script type="text/javascript" src="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.js" async></script><script type="text/javascript" src="/js/fancybox.js?v=0.0.0" async></script><link rel="stylesheet" type="text/css" href="//cdn.bootcss.com/fancybox/3.1.20/jquery.fancybox.min.css"><script>var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "//hm.baidu.com/hm.js?190c527f6634625eb57e08b1f7a8df33## Your Baidu Analytics tracking id, e.g. 8006843039519956000";
+  var s = document.getElementsByTagName("script")[0];
+  s.parentNode.insertBefore(hm, s);
+  })();
+</script><script type="text/javascript" src="/js/codeblock-resizer.js?v=0.0.0"></script><script type="text/javascript" src="/js/smartresize.js?v=0.0.0"></script></div></body></html>
